@@ -21,38 +21,51 @@ def extraer_texto(pdf_path):
 
 def extraer_items_flexibles(texto):
     items = []
-    patron = re.compile(r"(\d{2,6})\s+(\d{1,3})\s+(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\s+(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})")
-    bloques = patron.findall(texto)
-    descripciones = re.split(r"\n\d{2,6}\s+\d{1,3}\s+\d{1,3}[.,]\d{2}\s+\d{1,3}[.,]\d{2}", texto)
-    descripciones = [d.strip().replace("\n", " ") for d in descripciones[1:]]  # saltar encabezado
+    lineas = texto.splitlines()
+    item_actual = {}
 
-    for i, match in enumerate(bloques):
-        codigo, cantidad, unit, total = match
-        desc = descripciones[i] if i < len(descripciones) else ""
-        try:
-            items.append({
-                "Código": codigo.strip(),
-                "Descripción": desc[:120],
-                "Cantidad": int(cantidad),
-                "Precio Unitario (USD)": float(unit.replace(".", "").replace(",", ".")),
-                "Valor Total (USD)": float(total.replace(".", "").replace(",", "."))
-            })
-        except:
-            continue
+    for linea in lineas:
+        linea = linea.strip()
+
+        precios = re.findall(r"\d{1,3}(?:[.,]\d{3})*[.,]\d{2}", linea)
+        cantidades = re.findall(r"\b\d{1,3}\b", linea)
+
+        if len(precios) >= 2 and len(cantidades) >= 1:
+            try:
+                codigo_match = re.match(r"^(\d{3,6})", linea)
+                codigo = codigo_match.group(1) if codigo_match else ""
+
+                cantidad = int(cantidades[0])
+                unit = float(precios[-2].replace(".", "").replace(",", "."))
+                total = float(precios[-1].replace(".", "").replace(",", "."))
+
+                descripcion = item_actual.get("desc", "")
+                if not descripcion:
+                    partes = re.split(r"\s{2,}", linea)
+                    if len(partes) > 1:
+                        descripcion = partes[1]
+                    else:
+                        descripcion = linea
+
+                items.append({
+                    "Código": codigo,
+                    "Descripción": descripcion[:120],
+                    "Cantidad": cantidad,
+                    "Precio Unitario (USD)": unit,
+                    "Valor Total (USD)": total
+                })
+
+                item_actual = {}
+            except:
+                continue
+
+        elif not re.search(r"\d{1,3}(?:[.,]\d{3})*[.,]\d{2}", linea):
+            if "desc" in item_actual:
+                item_actual["desc"] += " " + linea
+            else:
+                item_actual["desc"] = linea
+
     return items
-
-def buscar_condicion(texto, clave):
-    patrones = {
-        "forma_pago": r"(forma de pago|pago:?)\s*:?\s*(.+?)(\n|$)",
-        "plazo_entrega": r"(plazo de entrega|entrega:?)\s*:?\s*(.+?)(\n|$)",
-        "incoterm": r"(incoterm|entrega en|transporte:?)\s*:?\s*(.+?)(\n|$)"
-    }
-    if clave in patrones:
-        match = re.search(patrones[clave], texto, re.IGNORECASE)
-        if match:
-            return match.group(2).strip()
-    return ""
-
 datos = []
 
 if uploaded_files:
