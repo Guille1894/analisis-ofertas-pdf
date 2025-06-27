@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pdfplumber
 import pandas as pd
@@ -66,6 +65,19 @@ def extraer_items_flexibles(texto):
                 item_actual["desc"] = linea
 
     return items
+
+def buscar_condicion(texto, clave):
+    patrones = {
+        "forma_pago": r"(forma de pago|pago:?)\s*:?\s*(.+?)(\n|$)",
+        "plazo_entrega": r"(plazo de entrega|entrega:?)\s*:?\s*(.+?)(\n|$)",
+        "incoterm": r"(incoterm|entrega en|transporte:?)\s*:?\s*(.+?)(\n|$)"
+    }
+    if clave in patrones:
+        match = re.search(patrones[clave], texto, re.IGNORECASE)
+        if match:
+            return match.group(2).strip()
+    return ""
+
 datos = []
 
 if uploaded_files:
