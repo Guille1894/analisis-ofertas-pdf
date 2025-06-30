@@ -5,10 +5,10 @@ import re
 from io import BytesIO
 import tempfile
 
-st.set_page_config(page_title="Comparador de Ofertas PDF", layout="wide")
-st.title("📄 Comparador Avanzado de Ofertas en PDF")
+st.set_page_config(page_title="Comparador Profesional de Ofertas", layout="wide")
+st.title("📄 Comparador de Ofertas PDF - Proveedor vs Proveedor")
 
-uploaded_files = st.file_uploader("📎 Cargar una o más ofertas en PDF", type=["pdf"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("📎 Cargar ofertas en PDF (hasta 6)", type=["pdf"], accept_multiple_files=True)
 
 def extraer_texto(pdf_path):
     texto = ""
@@ -30,7 +30,7 @@ def buscar_condicion(texto, clave):
             return match.group(2).strip()
     return ""
 
-def extraer_items_flexibles(texto):
+def extraer_items(texto):
     items = []
     lineas = texto.splitlines()
     item_actual = {}
@@ -50,10 +50,7 @@ def extraer_items_flexibles(texto):
                 descripcion = item_actual.get("desc", "")
                 if not descripcion:
                     partes = re.split(r"\s{2,}", linea)
-                    if len(partes) > 1:
-                        descripcion = partes[1]
-                    else:
-                        descripcion = linea
+                    descripcion = partes[1] if len(partes) > 1 else linea
                 items.append({
                     "Código": codigo,
                     "Descripción": descripcion.strip()[:120],
@@ -71,7 +68,7 @@ def extraer_items_flexibles(texto):
                 item_actual["desc"] = linea
     return items
 
-# Procesar archivos PDF cargados
+# Procesamiento
 datos = []
 
 if uploaded_files:
@@ -82,7 +79,7 @@ if uploaded_files:
 
         proveedor = archivo.name.replace(".pdf", "")
         entrega = buscar_condicion(texto, "plazo_entrega")
-        items = extraer_items_flexibles(texto)
+        items = extraer_items(texto)
 
         if items:
             for item in items:
@@ -90,23 +87,14 @@ if uploaded_files:
                 item["Entrega"] = entrega
             datos.extend(items)
         else:
-            st.warning(f"⚠️ No se detectaron ítems válidos en: {archivo.name}")
+            st.warning(f"⚠️ No se detectaron ítems en: {archivo.name}")
 
 if datos:
     df = pd.DataFrame(datos)
     productos = df[["Código", "Descripción"]].drop_duplicates()
     proveedores = df["Proveedor"].unique()
 
-    columnas = []
-    for proveedor in proveedores:
-        columnas.extend([
-            f"{proveedor} - Cantidad",
-            f"{proveedor} - Unitario",
-            f"{proveedor} - Total",
-            f"{proveedor} - Entrega"
-        ])
-
-    tabla_final = pd.DataFrame()
+    tabla = pd.DataFrame()
 
     for _, prod in productos.iterrows():
         fila = {
@@ -114,30 +102,31 @@ if datos:
             "Descripción": prod["Descripción"]
         }
         producto_df = df[(df["Código"] == prod["Código"]) & (df["Descripción"] == prod["Descripción"])]
-        mejores = producto_df.loc[producto_df["Precio Unitario (USD)"].idxmin(), "Proveedor"]
+        mejor_precio = producto_df["Precio Unitario (USD)"].min()
 
         for proveedor in proveedores:
             datos_p = producto_df[producto_df["Proveedor"] == proveedor]
             if not datos_p.empty:
-                fila[f"{proveedor} - Cantidad"] = datos_p["Cantidad"].values[0]
-                fila[f"{proveedor} - Unitario"] = datos_p["Precio Unitario (USD)"].values[0]
+                unit = datos_p["Precio Unitario (USD)"].values[0]
+                fila[f"{proveedor} - Cant"] = datos_p["Cantidad"].values[0]
+                fila[f"{proveedor} - Unit"] = unit
                 fila[f"{proveedor} - Total"] = datos_p["Valor Total (USD)"].values[0]
                 fila[f"{proveedor} - Entrega"] = datos_p["Entrega"].values[0]
+                fila[f"{proveedor} - Mejor"] = "🟢" if unit == mejor_precio else ""
             else:
-                fila[f"{proveedor} - Cantidad"] = ""
-                fila[f"{proveedor} - Unitario"] = ""
+                fila[f"{proveedor} - Cant"] = ""
+                fila[f"{proveedor} - Unit"] = ""
                 fila[f"{proveedor} - Total"] = ""
                 fila[f"{proveedor} - Entrega"] = ""
+                fila[f"{proveedor} - Mejor"] = ""
+        tabla = pd.concat([tabla, pd.DataFrame([fila])], ignore_index=True)
 
-        fila["🟢 Mejor Proveedor"] = mejores
-        tabla_final = pd.concat([tabla_final, pd.DataFrame([fila])], ignore_index=True)
-
-    st.subheader("📊 Comparativa estructurada por ítem")
-    st.dataframe(tabla_final, use_container_width=True)
+    st.subheader("📊 Comparativa por Ítem")
+    st.dataframe(tabla.style.highlight_min(subset=[f"{p} - Unit" for p in proveedores], axis=1, color='lightgreen'), use_container_width=True)
 
     output = BytesIO()
-    tabla_final.to_excel(output, index=False)
+    tabla.to_excel(output, index=False)
     output.seek(0)
-    st.download_button("📥 Descargar Excel comparativo", output, file_name="comparativa_estructura.xlsx")
+    st.download_button("📥 Descargar Excel", output, file_name="comparativa_ofertas_profesional.xlsx")
 else:
     st.info("📂 Cargá uno o más PDFs para iniciar la comparativa.")
