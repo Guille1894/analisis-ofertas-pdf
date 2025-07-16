@@ -109,9 +109,21 @@ if archivos:
 
     # --- Descargar como Excel ---
     st.markdown("### 📥 Descargar comparación")
-    excel_bytes = df.to_excel(index=False, engine='openpyxl')
-    st.download_button("Descargar Excel", data=excel_bytes, file_name="comparativa_ofertas.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    from io import BytesIO
 
+# Convertir DataFrame a archivo Excel en memoria
+output = BytesIO()
+with pd.ExcelWriter(output, engine='openpyxl') as writer:
+    df.to_excel(writer, index=False)
+output.seek(0)
+
+# Botón de descarga
+st.download_button(
+    label="Descargar Excel",
+    data=output,
+    file_name="comparativa_ofertas.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 else:
     st.info("Cargá al menos un archivo PDF para comenzar.")
 
