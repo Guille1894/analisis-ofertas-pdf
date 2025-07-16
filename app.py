@@ -19,30 +19,39 @@ def extraer_texto_pdf(pdf_file):
 
 # --- Función para detectar proveedor desde el texto ---
 def detectar_proveedor(texto):
+    # Patrones comunes
     patrones = [r"Proveedor:\s*(.+)", r"Company:\s*(.+)", r"Supplier:\s*(.+)"]
     for linea in texto.split("\n"):
         for patron in patrones:
             match = re.search(patron, linea, re.IGNORECASE)
             if match:
                 return match.group(1).strip()
+    
+    # Casos especiales
+    if "PAN AMERICAN ENERGY" in texto:
+        return "PAN AMERICAN ENERGY"
+    
     return "Proveedor desconocido"
 
-# --- Función para extraer ítems con cantidades y precios ---
+# --- Función mejorada para extraer ítems sin símbolo de moneda ---
 def extraer_items(texto):
-    lineas = texto.split("\n")
     items = []
+    lineas = texto.split("\n")
+    for i, linea in enumerate(lineas):
+        match = re.match(r"^\d{3}\s+\S+\s+(\d+)\s+(.+)", linea)
+        if match:
+            cantidad = float(match.group(1))
+            descripcion = match.group(2).strip()
 
-    for linea in lineas:
-        if re.search(r"\d", linea) and re.search(r"\d+(\.\d{1,2})?\s?[€$]", linea):
-            partes = linea.split()
-            try:
-                descripcion = " ".join(partes[1:-3])
-                cantidad = float(partes[-3].replace(",", ""))
-                precio_unit = float(partes[-2].replace(",", "").replace("$", "").replace("€", ""))
-                entrega = partes[-1]
-                items.append((descripcion, cantidad, precio_unit, entrega))
-            except:
-                continue
+            # Buscar línea de precios justo después
+            for j in range(i+1, min(i+5, len(lineas))):
+                if "P. UNIT." in lineas[j] and "TOTAL" in lineas[j]:
+                    precio_match = re.search(r"(\d[\d,.]*)\s*$", lineas[j+1])
+                    if precio_match:
+                        precio_unit = float(precio_match.group(1).replace(",", ""))
+                        entrega = "45 días"  # valor por defecto si no se extrae directamente
+                        items.append((descripcion, cantidad, precio_unit, entrega))
+                    break
     return items
 
 # --- Carga de PDFs ---
