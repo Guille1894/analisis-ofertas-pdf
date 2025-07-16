@@ -3,6 +3,7 @@ import pandas as pd
 import pdfplumber
 import re
 from collections import defaultdict
+from io import BytesIO
 
 st.set_page_config(page_title="Comparador de Ofertas", layout="wide")
 
@@ -109,21 +110,19 @@ if archivos:
 
     # --- Descargar como Excel ---
     st.markdown("### 📥 Descargar comparación")
-    from io import BytesIO
 
-# Convertir DataFrame a archivo Excel en memoria
-output = BytesIO()
-with pd.ExcelWriter(output, engine='openpyxl') as writer:
-    df.to_excel(writer, index=False)
-output.seek(0)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    output.seek(0)
 
-# Botón de descarga
-st.download_button(
-    label="Descargar Excel",
-    data=output,
-    file_name="comparativa_ofertas.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+    st.download_button(
+        label="Descargar Excel",
+        data=output,
+        file_name="comparativa_ofertas.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 else:
     st.info("Cargá al menos un archivo PDF para comenzar.")
+
 
