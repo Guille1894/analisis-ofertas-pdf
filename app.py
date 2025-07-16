@@ -1,132 +1,117 @@
 import streamlit as st
-import pdfplumber
 import pandas as pd
+import pdfplumber
 import re
-from io import BytesIO
-import tempfile
+from collections import defaultdict
 
-st.set_page_config(page_title="Comparador Profesional de Ofertas", layout="wide")
-st.title("📄 Comparador de Ofertas PDF - Proveedor vs Proveedor")
+st.set_page_config(page_title="Comparador de Ofertas", layout="wide")
 
-uploaded_files = st.file_uploader("📎 Cargar ofertas en PDF (hasta 6)", type=["pdf"], accept_multiple_files=True)
+st.title("📦 Comparador de Ofertas de Proveedores (PDF)")
 
-def extraer_texto(pdf_path):
+# --- Función para extraer texto de PDFs ---
+def extraer_texto_pdf(pdf_file):
     texto = ""
-    with pdfplumber.open(pdf_path) as pdf:
+    with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
-            if page.extract_text():
-                texto += page.extract_text() + "\n"
+            texto += page.extract_text() + "\n"
     return texto
 
-def buscar_condicion(texto, clave):
-    patrones = {
-        "forma_pago": r"(forma de pago|pago:?)\s*:?\s*(.+?)(\n|$)",
-        "plazo_entrega": r"(plazo de entrega|entrega:?)\s*:?\s*(.+?)(\n|$)",
-        "incoterm": r"(incoterm|entrega en|transporte:?)\s*:?\s*(.+?)(\n|$)"
-    }
-    if clave in patrones:
-        match = re.search(patrones[clave], texto, re.IGNORECASE)
-        if match:
-            return match.group(2).strip()
-    return ""
+# --- Función para detectar proveedor desde el texto ---
+def detectar_proveedor(texto):
+    patrones = [r"Proveedor:\s*(.+)", r"Company:\s*(.+)", r"Supplier:\s*(.+)"]
+    for linea in texto.split("\n"):
+        for patron in patrones:
+            match = re.search(patron, linea, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+    return "Proveedor desconocido"
 
+# --- Función para extraer ítems con cantidades y precios ---
 def extraer_items(texto):
+    lineas = texto.split("\n")
     items = []
-    lineas = texto.splitlines()
-    item_actual = {}
 
     for linea in lineas:
-        linea = linea.strip()
-        precios = re.findall(r"\d{1,3}(?:[.,]\d{3})*[.,]\d{2}", linea)
-        cantidades = re.findall(r"\b\d{1,3}\b", linea)
-
-        if len(precios) >= 2 and len(cantidades) >= 1:
+        if re.search(r"\d", linea) and re.search(r"\d+(\.\d{1,2})?\s?[€$]", linea):
+            partes = linea.split()
             try:
-                codigo_match = re.match(r"^(\d{3,6})", linea)
-                codigo = codigo_match.group(1) if codigo_match else ""
-                cantidad = int(cantidades[0])
-                unit = float(precios[-2].replace(".", "").replace(",", "."))
-                total = float(precios[-1].replace(".", "").replace(",", "."))
-                descripcion = item_actual.get("desc", "")
-                if not descripcion:
-                    partes = re.split(r"\s{2,}", linea)
-                    descripcion = partes[1] if len(partes) > 1 else linea
-                items.append({
-                    "Código": codigo,
-                    "Descripción": descripcion.strip()[:120],
-                    "Cantidad": cantidad,
-                    "Precio Unitario (USD)": unit,
-                    "Valor Total (USD)": total
-                })
-                item_actual = {}
+                descripcion = " ".join(partes[1:-3])
+                cantidad = float(partes[-3].replace(",", ""))
+                precio_unit = float(partes[-2].replace(",", "").replace("$", "").replace("€", ""))
+                entrega = partes[-1]
+                items.append((descripcion, cantidad, precio_unit, entrega))
             except:
                 continue
-        elif not re.search(r"\d{1,3}(?:[.,]\d{3})*[.,]\d{2}", linea):
-            if "desc" in item_actual:
-                item_actual["desc"] += " " + linea
-            else:
-                item_actual["desc"] = linea
     return items
 
-# Procesamiento
-datos = []
+# --- Carga de PDFs ---
+archivos = st.file_uploader("Cargar archivos PDF de proveedores", type="pdf", accept_multiple_files=True)
 
-if uploaded_files:
-    for archivo in uploaded_files:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(archivo.read())
-            texto = extraer_texto(tmp.name)
+if archivos:
+    datos = defaultdict(dict)
+    lista_productos = set()
+    proveedores = []
 
-        proveedor = archivo.name.replace(".pdf", "")
-        entrega = buscar_condicion(texto, "plazo_entrega")
+    for archivo in archivos:
+        texto = extraer_texto_pdf(archivo)
+        proveedor = detectar_proveedor(texto)
+        proveedores.append(proveedor)
+
         items = extraer_items(texto)
+        for descripcion, cantidad, precio_unit, entrega in items:
+            lista_productos.add(descripcion)
+            datos[descripcion][proveedor] = {
+                "cantidad": cantidad,
+                "precio_unit": precio_unit,
+                "valor_total": cantidad * precio_unit,
+                "entrega": entrega
+            }
 
-        if items:
-            for item in items:
-                item["Proveedor"] = proveedor
-                item["Entrega"] = entrega
-            datos.extend(items)
-        else:
-            st.warning(f"⚠️ No se detectaron ítems en: {archivo.name}")
+    # --- Construcción de la tabla comparativa ---
+    lista_productos = sorted(lista_productos)
+    columnas = ["Producto"]
 
-if datos:
-    df = pd.DataFrame(datos)
-    productos = df[["Código", "Descripción"]].drop_duplicates()
-    proveedores = df["Proveedor"].unique()
+    for proveedor in proveedores:
+        columnas += [
+            f"{proveedor} - Cantidad",
+            f"{proveedor} - Unit",
+            f"{proveedor} - Total",
+            f"{proveedor} - Entrega"
+        ]
 
-    tabla = pd.DataFrame()
+    tabla = []
 
-    for _, prod in productos.iterrows():
-        fila = {
-            "Código": prod["Código"],
-            "Descripción": prod["Descripción"]
-        }
-        producto_df = df[(df["Código"] == prod["Código"]) & (df["Descripción"] == prod["Descripción"])]
-        mejor_precio = producto_df["Precio Unitario (USD)"].min()
-
+    for producto in lista_productos:
+        fila = [producto]
         for proveedor in proveedores:
-            datos_p = producto_df[producto_df["Proveedor"] == proveedor]
-            if not datos_p.empty:
-                unit = datos_p["Precio Unitario (USD)"].values[0]
-                fila[f"{proveedor} - Cant"] = datos_p["Cantidad"].values[0]
-                fila[f"{proveedor} - Unit"] = unit
-                fila[f"{proveedor} - Total"] = datos_p["Valor Total (USD)"].values[0]
-                fila[f"{proveedor} - Entrega"] = datos_p["Entrega"].values[0]
-                fila[f"{proveedor} - Mejor"] = "🟢" if unit == mejor_precio else ""
-            else:
-                fila[f"{proveedor} - Cant"] = ""
-                fila[f"{proveedor} - Unit"] = ""
-                fila[f"{proveedor} - Total"] = ""
-                fila[f"{proveedor} - Entrega"] = ""
-                fila[f"{proveedor} - Mejor"] = ""
-        tabla = pd.concat([tabla, pd.DataFrame([fila])], ignore_index=True)
+            info = datos[producto].get(proveedor, {})
+            fila += [
+                info.get("cantidad", ""),
+                info.get("precio_unit", ""),
+                info.get("valor_total", ""),
+                info.get("entrega", "")
+            ]
+        tabla.append(fila)
 
-    st.subheader("📊 Comparativa por Ítem")
-    st.dataframe(tabla.style.highlight_min(subset=[f"{p} - Unit" for p in proveedores], axis=1, color='lightgreen'), use_container_width=True)
+    df = pd.DataFrame(tabla, columns=columnas)
 
-    output = BytesIO()
-    tabla.to_excel(output, index=False)
-    output.seek(0)
-    st.download_button("📥 Descargar Excel", output, file_name="comparativa_ofertas_profesional.xlsx")
+    # --- Mostrar tabla con resaltado del mejor precio unitario ---
+    st.subheader("🔍 Comparativa por ítem")
+
+    cols_unit = [f"{p} - Unit" for p in proveedores if f"{p} - Unit" in df.columns and pd.api.types.is_numeric_dtype(df[f"{p} - Unit"])]
+
+    if cols_unit:
+        styled_df = df.style.highlight_min(subset=cols_unit, axis=1, color='lightgreen')
+    else:
+        styled_df = df.style
+
+    st.dataframe(styled_df, use_container_width=True)
+
+    # --- Descargar como Excel ---
+    st.markdown("### 📥 Descargar comparación")
+    excel_bytes = df.to_excel(index=False, engine='openpyxl')
+    st.download_button("Descargar Excel", data=excel_bytes, file_name="comparativa_ofertas.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 else:
-    st.info("📂 Cargá uno o más PDFs para iniciar la comparativa.")
+    st.info("Cargá al menos un archivo PDF para comenzar.")
+
