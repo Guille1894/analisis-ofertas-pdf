@@ -25,23 +25,19 @@ def detectar_proveedor(texto):
         return "Proveedor desconocido"
 
 # --- Función para extraer ítems de oferta ---
+# --- Función para extraer ítems de oferta ---
 def extraer_items(texto):
     items = []
-    patrones = [
-        r"(\d{1,3})\s+([A-Z0-9/-]+)\s+(\d+)\s+(.+?)\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)",
-        r"(\d+)\s+([A-Z0-9/-]+).*?Qty\s+(\d+)\s+EA\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2}))\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2}))"
-    ]
-    for patron in patrones:
-        matches = re.findall(patron, texto, re.DOTALL)
-        for m in matches:
-            if len(m) >= 6:
-                items.append({
-                    "Código": m[1],
-                    "Descripción": m[3].strip() if len(m) >= 4 else "",
-                    "Cantidad": int(m[2]),
-                    "Precio Unitario": float(m[4].replace(",", "")),
-                    "Total": float(m[5].replace(",", ""))
-                })
+    patron = r"(\\d+)\\s+([\\dA-Z/-]+)\\s+[\\d,\\.]+\\s+(\\d+)\\s+EA\\s+(\\d+[\\.,]\\d{2})\\s+(\\d+[\\.,]\\d{2})"
+    matches = re.findall(patron, texto)
+    for m in matches:
+        items.append({
+            "Código": m[1],
+            "Descripción": "",  # Si querés, se puede mejorar esto
+            "Cantidad": int(m[2]),
+            "Precio Unitario": float(m[3].replace(",", "")),
+            "Total": float(m[4].replace(",", ""))
+        })
     return items
 
 # --- Función para extraer condiciones comerciales ---
