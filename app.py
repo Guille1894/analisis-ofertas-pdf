@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import pdfplumber
 import re
-from collections import defaultdict
 from io import BytesIO
 
-st.set_page_config(page_title="Comparador de Ofertas", layout="wide")
+st.set_page_config(page_title="📦 Comparador de Ofertas PDF", layout="wide")
 st.title("📦 Comparador de Ofertas de Proveedores (PDF)")
 
 # --- Función para extraer texto de PDFs ---
@@ -18,141 +17,89 @@ def extraer_texto_pdf(pdf_file):
 
 # --- Función para detectar proveedor desde el texto ---
 def detectar_proveedor(texto):
-    patrones = [r"Proveedor:\s*(.+)", r"Company:\s*(.+)", r"Supplier:\s*(.+)"]
-    for linea in texto.split("\n"):
-        for patron in patrones:
-            match = re.search(patron, linea, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-    if "PAN AMERICAN ENERGY" in texto:
-        return "PAN AMERICAN ENERGY"
-    return "Proveedor desconocido"
+    if "Cameron" in texto:
+        return "Cameron"
+    elif "Pernigotti" in texto or "MMA" in texto:
+        return "MMA"
+    else:
+        return "Proveedor desconocido"
 
-# --- Función para extraer ítems ---
+# --- Función para extraer ítems de oferta ---
 def extraer_items(texto):
     items = []
-    lineas = texto.split("\n")
-    for i, linea in enumerate(lineas):
-        match = re.match(r"^\d{3}\s+\S+\s+(\d+)\s+(.+)", linea)
-        if match:
-            cantidad = float(match.group(1))
-            descripcion = match.group(2).strip()
-            for j in range(i+1, min(i+5, len(lineas))):
-                if "P. UNIT." in lineas[j] and "TOTAL" in lineas[j]:
-                    precio_match = re.search(r"(\d[\d,.]*)\s*$", lineas[j+1])
-                    if precio_match:
-                        precio_unit = float(precio_match.group(1).replace(",", ""))
-                        entrega = "No especificada"
-                        items.append((descripcion, cantidad, precio_unit, entrega))
-                    break
+    patrones = [
+        r"(\d{1,3})\s+([A-Z0-9/-]+)\s+(\d+)\s+(.+?)\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)",
+        r"(\d+)\s+([A-Z0-9/-]+).*?Qty\s+(\d+)\s+EA\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2}))\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2}))"
+    ]
+    for patron in patrones:
+        matches = re.findall(patron, texto, re.DOTALL)
+        for m in matches:
+            if len(m) >= 6:
+                items.append({
+                    "Código": m[1],
+                    "Descripción": m[3].strip() if len(m) >= 4 else "",
+                    "Cantidad": int(m[2]),
+                    "Precio Unitario": float(m[4].replace(",", "")),
+                    "Total": float(m[5].replace(",", ""))
+                })
     return items
 
 # --- Función para extraer condiciones comerciales ---
 def extraer_condiciones(texto):
     condiciones = {}
-
-    entrega_match = re.search(r"PLAZO DE ENTREGA\s*[:\-]?\s*(.+)", texto, re.IGNORECASE)
-    if entrega_match:
-        condiciones["Entrega"] = entrega_match.group(1).strip()
-
-    pago_match = re.search(r"FORMA DE PAGO\s*[:\-]?\s*(.+)", texto, re.IGNORECASE)
-    if pago_match:
-        condiciones["Forma de pago"] = pago_match.group(1).strip()
-
-    validez_match = re.search(r"VALIDEZ DE OFERTA\s*[:\-]?\s*(.+)", texto, re.IGNORECASE)
-    if validez_match:
-        condiciones["Validez"] = validez_match.group(1).strip()
-
+    if "30 DÍAS" in texto.upper() or "NET 30" in texto.upper():
+        condiciones["Forma de Pago"] = "30 días f/f"
+    if "45 DIAS" in texto.upper():
+        condiciones["Plazo de Entrega"] = "45 días"
+    if "5 semanas" in texto.lower():
+        condiciones["Plazo de Entrega"] = "5 a 15 semanas"
+    if "FCA" in texto.upper():
+        condiciones["Incoterm"] = "FCA"
+    if "VALIDEZ DE LA OFERTA: treinta (30) días" in texto:
+        condiciones["Validez"] = "30 días"
     return condiciones
 
-# --- Carga de PDFs ---
-archivos = st.file_uploader("Cargar archivos PDF de proveedores", type="pdf", accept_multiple_files=True)
+# --- Inicio de la app ---
+archivos_pdf = st.file_uploader("📂 Subí las ofertas en PDF", type=["pdf"], accept_multiple_files=True)
 
-if archivos:
-    datos = defaultdict(dict)
-    condiciones_por_proveedor = {}
-    lista_productos = set()
-    proveedores = []
-
-    for archivo in archivos:
+if archivos_pdf:
+    data = []
+    productos = set()
+    for archivo in archivos_pdf:
         texto = extraer_texto_pdf(archivo)
         proveedor = detectar_proveedor(texto)
-        proveedores.append(proveedor)
-
         items = extraer_items(texto)
         condiciones = extraer_condiciones(texto)
-        condiciones_por_proveedor[proveedor] = condiciones
+        for item in items:
+            productos.add(item["Descripción"])
+            data.append({
+                "Proveedor": proveedor,
+                "Descripción": item["Descripción"],
+                "Cantidad": item["Cantidad"],
+                "Precio Unitario": item["Precio Unitario"],
+                "Total": item["Total"],
+                **condiciones
+            })
 
-        for descripcion, cantidad, precio_unit, entrega in items:
-            lista_productos.add(descripcion)
-            datos[descripcion][proveedor] = {
-                "cantidad": cantidad,
-                "precio_unit": precio_unit,
-                "valor_total": cantidad * precio_unit,
-                "entrega": entrega
-            }
+    if data:
+        df = pd.DataFrame(data)
+        st.subheader("📊 Comparativa de Ofertas por Ítem")
+        tabla = df.pivot_table(index="Descripción", columns="Proveedor",
+                               values=["Cantidad", "Precio Unitario", "Total"], aggfunc="first")
 
-    # --- Tabla comparativa de ítems ---
-    lista_productos = sorted(lista_productos)
-    columnas = ["Producto"]
-    for proveedor in proveedores:
-        columnas += [
-            f"{proveedor} - Cantidad",
-            f"{proveedor} - Unit",
-            f"{proveedor} - Total",
-            f"{proveedor} - Entrega"
-        ]
+        def resaltar_mejor_precio(valores):
+            try:
+                return ["background-color: lightgreen" if v == min(valores) else "" for v in valores]
+            except:
+                return [""] * len(valores)
 
-    tabla = []
-    for producto in lista_productos:
-        fila = [producto]
-        for proveedor in proveedores:
-            info = datos[producto].get(proveedor, {})
-            fila += [
-                info.get("cantidad", ""),
-                info.get("precio_unit", ""),
-                info.get("valor_total", ""),
-                info.get("entrega", "")
-            ]
-        tabla.append(fila)
+        st.dataframe(tabla.style.apply(resaltar_mejor_precio, subset=("Precio Unitario", slice(None)), axis=1), use_container_width=True)
 
-    df = pd.DataFrame(tabla, columns=columnas)
+        st.subheader("📁 Exportar Resultados")
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name="Comparativa")
+        st.download_button("📥 Descargar Excel", data=buffer.getvalue(), file_name="comparativa_ofertas.xlsx")
 
-    # --- Mostrar tabla con resaltado del mejor precio unitario ---
-    st.subheader("🔍 Comparativa por ítem")
-
-    cols_unit = [f"{p} - Unit" for p in proveedores if f"{p} - Unit" in df.columns and pd.api.types.is_numeric_dtype(df[f"{p} - Unit"])]
-
-    if cols_unit:
-        styled_df = df.style.highlight_min(subset=cols_unit, axis=1, color='lightgreen')
     else:
-        styled_df = df.style
-
-    st.dataframe(styled_df, use_container_width=True)
-
-    # --- Mostrar condiciones comerciales por proveedor ---
-    st.subheader("📄 Condiciones Comerciales")
-    tabla_cond = pd.DataFrame(condiciones_por_proveedor).fillna("-")
-    st.dataframe(tabla_cond, use_container_width=True)
-
-    # --- Descargar como Excel ---
-    st.markdown("### 📥 Descargar comparación")
-
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name="Comparativa", index=False)
-        tabla_cond.T.to_excel(writer, sheet_name="Condiciones")  # Transpuesta para mostrar bien
-
-    output.seek(0)
-
-    st.download_button(
-        label="Descargar Excel",
-        data=output,
-        file_name="comparativa_ofertas.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-else:
-    st.info("Cargá al menos un archivo PDF para comenzar.")
-
-
-
+        st.warning("No se detectaron ítems en los PDFs cargados.")
