@@ -25,15 +25,14 @@ def detectar_proveedor(texto):
         return "Proveedor desconocido"
 
 # --- Función para extraer ítems de oferta ---
-# --- Función para extraer ítems de oferta ---
 def extraer_items(texto):
     items = []
-    patron = r"(\\d+)\\s+([\\dA-Z/-]+)\\s+[\\d,\\.]+\\s+(\\d+)\\s+EA\\s+(\\d+[\\.,]\\d{2})\\s+(\\d+[\\.,]\\d{2})"
+    patron = r"(\d+)\s+([\dA-Z/-]+)\s+[\d,\.]+\s+(\d+)\s+EA\s+(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2})"
     matches = re.findall(patron, texto)
     for m in matches:
         items.append({
             "Código": m[1],
-            "Descripción": "",  # Si querés, se puede mejorar esto
+            "Descripción": "Producto identificado automáticamente",
             "Cantidad": int(m[2]),
             "Precio Unitario": float(m[3].replace(",", "")),
             "Total": float(m[4].replace(",", ""))
