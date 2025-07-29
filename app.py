@@ -12,14 +12,16 @@ def extraer_texto_pdf(pdf_file):
     texto = ""
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
-            texto += page.extract_text() + "\n"
+            contenido = page.extract_text()
+            if contenido:
+                texto += contenido + "\n"
     return texto
 
 # --- Función para detectar proveedor desde el texto ---
 def detectar_proveedor(texto):
     if "Cameron" in texto:
         return "Cameron"
-    elif "Pernigotti" in texto or "MMA" in texto:
+    elif "Pernigotti" in texto or "MMA" in texto or "APERNIGOTTI" in texto:
         return "MMA"
     else:
         return "Proveedor desconocido"
@@ -27,16 +29,31 @@ def detectar_proveedor(texto):
 # --- Función para extraer ítems de oferta ---
 def extraer_items(texto):
     items = []
-    patron = r"(\d+)\s+([\dA-Z/-]+)\s+[\d,\.]+\s+(\d+)\s+EA\s+(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2})"
-    matches = re.findall(patron, texto)
+
+    # Para PDF tipo Cameron
+    patron_cameron = r"(\d+)\s+([\dA-Z/-]+)\s+[\d,\.]+\s+(\d+)\s+EA\s+(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2})"
+    matches = re.findall(patron_cameron, texto)
     for m in matches:
         items.append({
             "Código": m[1],
-            "Descripción": "Producto identificado automáticamente",
+            "Descripción": "Brida Cameron",
             "Cantidad": int(m[2]),
             "Precio Unitario": float(m[3].replace(",", "")),
             "Total": float(m[4].replace(",", ""))
         })
+
+    # Para PDF tipo MMA
+    patron_mma = r"(\d{3})\s+([\dA-Z/-]+)\s+(\d+)\s+(.+?)\s+(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2})"
+    matches = re.findall(patron_mma, texto)
+    for m in matches:
+        items.append({
+            "Código": m[1],
+            "Descripción": m[3].strip(),
+            "Cantidad": int(m[2]),
+            "Precio Unitario": float(m[4].replace(",", "")),
+            "Total": float(m[5].replace(",", ""))
+        })
+
     return items
 
 # --- Función para extraer condiciones comerciales ---
@@ -44,13 +61,15 @@ def extraer_condiciones(texto):
     condiciones = {}
     if "30 DÍAS" in texto.upper() or "NET 30" in texto.upper():
         condiciones["Forma de Pago"] = "30 días f/f"
+    if "15 DÍAS" in texto.upper():
+        condiciones["Forma de Pago"] = "15 días"
     if "45 DIAS" in texto.upper():
         condiciones["Plazo de Entrega"] = "45 días"
-    if "5 semanas" in texto.lower():
+    if "5 semanas" in texto.lower() or "15 semanas" in texto.lower():
         condiciones["Plazo de Entrega"] = "5 a 15 semanas"
     if "FCA" in texto.upper():
         condiciones["Incoterm"] = "FCA"
-    if "VALIDEZ DE LA OFERTA: treinta (30) días" in texto:
+    if "VALIDEZ DE LA OFERTA: treinta (30) días" in texto or "Valid To" in texto:
         condiciones["Validez"] = "30 días"
     return condiciones
 
