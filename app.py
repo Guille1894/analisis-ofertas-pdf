@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import pdfplumber
@@ -100,7 +99,14 @@ if archivos_pdf:
             except:
                 return [""] * len(valores)
 
-        st.dataframe(tabla.style.apply(resaltar_mejor_precio, subset=("Precio Unitario", slice(None)), axis=1), use_container_width=True)
+        try:
+            st.dataframe(tabla.style.apply(
+                resaltar_mejor_precio,
+                subset=("Precio Unitario", slice(None)),
+                axis=1
+            ), use_container_width=True)
+        except KeyError:
+            st.dataframe(tabla, use_container_width=True)
 
         st.subheader("📁 Exportar Resultados")
         buffer = BytesIO()
