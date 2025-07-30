@@ -7,7 +7,6 @@ from io import BytesIO
 st.set_page_config(page_title="📦 Comparador de Ofertas PDF", layout="wide")
 st.title("📦 Comparador de Ofertas de Proveedores (PDF)")
 
-# --- Función para extraer texto de PDFs ---
 def extraer_texto_pdf(pdf_file):
     texto = ""
     with pdfplumber.open(pdf_file) as pdf:
@@ -17,7 +16,6 @@ def extraer_texto_pdf(pdf_file):
                 texto += contenido + "\n"
     return texto
 
-# --- Función para detectar proveedor desde el texto ---
 def detectar_proveedor(texto):
     if "Cameron" in texto:
         return "Cameron"
@@ -26,37 +24,32 @@ def detectar_proveedor(texto):
     else:
         return "Proveedor desconocido"
 
-# --- Función para extraer ítems de oferta ---
 def extraer_items(texto):
     items = []
-
-    # Para PDF tipo Cameron
-    patron_cameron = r"(\d+)\s+([\dA-Z/-]+)\s+[\d,\.]+\s+(\d+)\s+EA\s+(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2})"
+    patron_cameron = r"(\d+)\s+([\dA-Z/-]+)\s+[\d,\.]+\s+(\d+)\s+EA\s+(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))\s+(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))"
     matches = re.findall(patron_cameron, texto)
     for m in matches:
         items.append({
             "Código": m[1],
             "Descripción": "Brida Cameron",
             "Cantidad": int(m[2]),
-            "Precio Unitario": float(m[3].replace(",", "")),
-            "Total": float(m[4].replace(",", ""))
+            "Precio Unitario": float(m[3].replace(".", "").replace(",", ".")) if "," in m[3] else float(m[3].replace(",", "")),
+            "Total": float(m[4].replace(".", "").replace(",", ".")) if "," in m[4] else float(m[4].replace(",", ""))
         })
 
-    # Para PDF tipo MMA
-    patron_mma = r"(\d{3})\s+([\dA-Z/-]+)\s+(\d+)\s+(.+?)\s+(\d+[\.,]\d{2})\s+(\d+[\.,]\d{2})"
+    patron_mma = r"(\d{3})\s+([\dA-Z/-]+)\s+(\d+)\s+(.+?)\s+(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))\s+(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))"
     matches = re.findall(patron_mma, texto)
     for m in matches:
         items.append({
             "Código": m[1],
             "Descripción": m[3].strip(),
             "Cantidad": int(m[2]),
-            "Precio Unitario": float(m[4].replace(",", "")),
-            "Total": float(m[5].replace(",", ""))
+            "Precio Unitario": float(m[4].replace(".", "").replace(",", ".")) if "," in m[4] else float(m[4].replace(",", "")),
+            "Total": float(m[5].replace(".", "").replace(",", ".")) if "," in m[5] else float(m[5].replace(",", ""))
         })
 
     return items
 
-# --- Función para extraer condiciones comerciales ---
 def extraer_condiciones(texto):
     condiciones = {}
     if "30 DÍAS" in texto.upper() or "NET 30" in texto.upper():
@@ -73,7 +66,6 @@ def extraer_condiciones(texto):
         condiciones["Validez"] = "30 días"
     return condiciones
 
-# --- Inicio de la app ---
 archivos_pdf = st.file_uploader("📂 Subí las ofertas en PDF", type=["pdf"], accept_multiple_files=True)
 
 if archivos_pdf:
